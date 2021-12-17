@@ -3,28 +3,22 @@ package main
 import (
 	"net/http"
 
-	. "remotechess/src/rc_server"
+	. "remotechess/src/frontend/appcore"
+	"remotechess/src/rc_server"
+	"remotechess/src/rc_server/servercore"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	_ "github.com/lib/pq"
 )
 
-type App struct {
-	Server Server
-}
-
 func main() {
-	var app App
+	var app AppCore
 
-	app.Server.Router = chi.NewRouter()
+	app.Server = servercore.NewServerCore()
 
-	app.Server.Router.Use(middleware.Logger)
-	app.Server.Router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("welcome"))
-	})
+	rc_server.InitServer()
 
-	app.Routes()
+	rc_server.Routes(&app.Server)
+	Routes(&app)
 
 	http.ListenAndServe(":3000", app.Server.Router)
-
 }

@@ -4,3 +4,4 @@ pkg/
 
 workspace.code-workspace
 go.sum
+*.exe

@@ -1,48 +1,55 @@
 package users
 
-import (
-	"context"
-	"net/http"
-	"strconv"
+// import (
+// 	"context"
+// 	"net/http"
+// 	"strconv"
 
-	"github.com/go-chi/chi/v5"
-)
+// 	"github.com/go-chi/chi/v5"
 
-type UserHandler struct{}
+// 	. "remotechess/src/frontend/appcore"
+// )
 
-func (uh *UserHandler) UserRouter() func(chi.Router) {
-	return func(r chi.Router) {
-		r.Routes()
-		r.Use(uh.UserCtx)
-		r.Get("/", uh.GetUser)
-	}
-}
+// type UserHandler struct {
+// 	app *AppCore
+// }
 
-func (uh *UserHandler) UserCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var userIdStr string = chi.URLParam(r, "userId")
+// func NewUserHandler(app *AppCore) UserHandler {
+// 	return UserHandler{app}
+// }
 
-		userId, err := strconv.Atoi(userIdStr)
+// func (uh *UserHandler) Router() func(chi.Router) {
+// 	return func(r chi.Router) {
+// 		r.Use(uh.Ctx)
+// 		r.Get("/", uh.GetUser)
+// 	}
+// }
 
-		if err != nil {
-			w.Write([]byte("Invalid user ID!"))
-			return
-		}
+// func (uh *UserHandler) Ctx(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		var userIdStr string = chi.URLParam(r, "userId")
 
-		ctx := context.WithValue(r.Context(), "user", userId)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
+// 		userId, err := strconv.Atoi(userIdStr)
 
-func (uh *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+// 		if err != nil {
+// 			w.Write([]byte("Invalid user ID!"))
+// 			return
+// 		}
 
-	userId, ok := ctx.Value("user").(int)
+// 		ctx := context.WithValue(r.Context(), "user", userId)
+// 		next.ServeHTTP(w, r.WithContext(ctx))
+// 	})
+// }
 
-	if !ok {
-		http.Error(w, http.StatusText(422), 422)
-		return
-	}
+// func (uh *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+// 	ctx := r.Context()
 
-	w.Write([]byte("User ID: " + strconv.Itoa(userId)))
-}
+// 	userId, ok := ctx.Value("user").(int)
+
+// 	if !ok {
+// 		http.Error(w, http.StatusText(422), 422)
+// 		return
+// 	}
+
+// 	w.Write([]byte("User ID: " + strconv.Itoa(userId)))
+// }
