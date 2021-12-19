@@ -21,13 +21,13 @@ func FetchUserCore(userId uint64) (*UserCore, error) {
 	row := sv.Db.QueryRow(GetUserCoreQuery(SELECT_USER), userId)
 
 	if row.Err() != nil {
-		return &user, sv.NewInternalError("FetchUserCore " + row.Err().Error())
+		return nil, sv.NewInternalError("FetchUserCore " + row.Err().Error())
 	}
 
 	err := row.Scan(&user.Id, &user.Email, &user.Username)
 
 	if err == sql.ErrNoRows {
-		return &user, sv.NewDoesNotExistError("User")
+		return nil, sv.NewDoesNotExistError("User")
 	} else {
 		return &user, nil
 	}
@@ -73,13 +73,13 @@ func (user *UserCore) GetFriends(pending bool) ([]UserCore, error) {
 
 	for rows.Next() {
 		var pending UserCore
-
 		err = rows.Scan(&pending.Id, &pending.Username)
-		pendingRequests = append(pendingRequests, pending)
 
 		if err != nil {
 			return nil, sv.NewInternalError(err.Error())
 		}
+
+		pendingRequests = append(pendingRequests, pending)
 	}
 
 	if err != nil {

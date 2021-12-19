@@ -11,6 +11,11 @@ import (
 	"github.com/go-chi/render"
 )
 
+const (
+	CAN_BE_EMPTY    bool = true
+	CANNOT_BE_EMPTY      = false
+)
+
 func CtxIntFromURL(chiUrlVarName string, displayName string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,6 +28,21 @@ func CtxIntFromURL(chiUrlVarName string, displayName string) func(http.Handler) 
 			}
 
 			ctx := context.WithValue(r.Context(), chiUrlVarName, data)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func CtxStringFromURL(chiUrlVarName string, displayName string, canBeEmpty bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var dataStr string = chi.URLParam(r, chiUrlVarName)
+
+			if !canBeEmpty && dataStr == "" {
+				render.Render(w, r, NewErrResponse(displayName+" cannot be empty", 400, false))
+			}
+
+			ctx := context.WithValue(r.Context(), chiUrlVarName, dataStr)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -51,13 +71,3 @@ func CtxFetchFromUrl(chiUrlVarName string, displayName string, ctxFetchedName st
 		})
 	}
 }
-
-// 	var dataStr string = chi.URLParam(r, chiVarName)
-// 	data, err := strconv.Atoi(dataStr)
-
-// 	if err != nil {
-// 		return 0, errors.New("Invalid " + displayName)
-// 	}
-
-// 	return data, nil
-// }

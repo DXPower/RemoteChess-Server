@@ -1,12 +1,6 @@
 package service
 
-type ServiceError struct {
-	Detail string
-}
-
-type InternalError ServiceError
-type DoesNotExist ServiceError
-type AlreadyExists ServiceError
+import "fmt"
 
 type SensitivityLevel bool
 
@@ -15,44 +9,37 @@ const (
 	NOT_SENSITIVE = false
 )
 
-type GenericError struct {
-	ServiceError
-	Code        int
-	Sensitivity SensitivityLevel
+type ServiceError struct {
+	Detail          string
+	HttpCodeHint    int
+	SensitivityHint SensitivityLevel
+	format          string
 }
 
-func (g *GenericError) IsSensitive() bool {
-	return g.Sensitivity == SENSITIVE
+func (s *ServiceError) IsSensitive() bool {
+	return s.SensitivityHint == SENSITIVE
 }
 
-func (err *InternalError) Error() string {
-	return err.Detail
+func (s *ServiceError) Error() string {
+	return fmt.Sprintf(s.format, s.Detail)
 }
 
-func (err *DoesNotExist) Error() string {
-	return err.Detail + " does not exist"
+func NewInternalError(detail string) *ServiceError {
+	return &ServiceError{detail, 500, SENSITIVE, "%s"}
 }
 
-func (err *AlreadyExists) Error() string {
-	return err.Detail + " already exists"
+func NewDoesNotExistError(detail string) *ServiceError {
+	return &ServiceError{detail, 404, NOT_SENSITIVE, "%s does not exist"}
 }
 
-func (err *GenericError) Error() string {
-	return err.Detail
+func NewAlreadyExistsError(detail string) *ServiceError {
+	return &ServiceError{detail, 409, NOT_SENSITIVE, "%s already exists"}
 }
 
-func NewInternalError(detail string) *InternalError {
-	return &InternalError{Detail: detail}
+func NewInvalidInputError(detail string) *ServiceError {
+	return &ServiceError{detail, 400, NOT_SENSITIVE, "%s is malformed"}
 }
 
-func NewDoesNotExistError(detail string) *DoesNotExist {
-	return &DoesNotExist{Detail: detail}
-}
-
-func NewAlreadyExistsError(detail string) *AlreadyExists {
-	return &AlreadyExists{Detail: detail}
-}
-
-func NewGenericError(detail string, code int, sensitivity SensitivityLevel) *GenericError {
-	return &GenericError{ServiceError: ServiceError{Detail: detail}, Code: code, Sensitivity: sensitivity}
+func NewGenericError(detail string, httpCodeHint int, sensitivityHint SensitivityLevel) *ServiceError {
+	return &ServiceError{detail, httpCodeHint, sensitivityHint, "%s"}
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	. "remotechess/src/rc_server/api"
 	. "remotechess/src/rc_server/api/chessboards"
+	. "remotechess/src/rc_server/api/games"
 	. "remotechess/src/rc_server/api/usercore"
 	"remotechess/src/rc_server/rcdb"
 	. "remotechess/src/rc_server/servercore"
@@ -24,6 +25,8 @@ func ContentResponder(w http.ResponseWriter, r *http.Request, v interface{}) {
 			render.PlainText(w, r, string(*ptr))
 		} else if str, ok := v.(*string); ok {
 			render.PlainText(w, r, *str)
+		} else if errResp, ok := v.(*ErrResponse); ok {
+			render.PlainText(w, r, errResp.Detail)
 		}
 	default:
 		render.DefaultResponder(w, r, v)
@@ -38,11 +41,13 @@ func InitServer() {
 func Routes(server *ServerCore) {
 	uch := NewUserCoreHandler(server)
 	cbh := NewChessboardHandler(server)
+	gh := NewGameHandler(server)
 
 	server.Router.Route("/api", func(r chi.Router) {
 		r.Use(render.SetContentType(render.ContentTypeJSON))
 
 		r.Route("/usercore/{userId}", uch.Router())
 		r.Route("/chessboard/{boardId}", cbh.Router)
+		r.Route("/game", gh.Router)
 	})
 }

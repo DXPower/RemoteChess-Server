@@ -20,5 +20,6 @@ func main() {
 	rc_server.Routes(&app.Server)
 	Routes(&app)
 
+	println("Beginning to listen on localhost:3000")
 	http.ListenAndServe(":3000", app.Server.Router)
 }

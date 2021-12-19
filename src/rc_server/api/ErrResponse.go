@@ -31,44 +31,26 @@ func NewErrResponse(detail string, httpStatus int, obscured bool) *ErrResponse {
 	return &ErrResponse{false, detail, httpStatus, obscured}
 }
 
-func NewErrResponseFromServiceErr(err error, httpStatus int, obscure ObscureError) *ErrResponse {
-	var defaultStatus int
-	var defaultObscure ObscureError
+func NewErrResponseFromServiceErr(err error, httpStatus int, obscureType ObscureError) *ErrResponse {
+	var obscure bool = obscureType == ERROR_OBSCURED
 
-	switch err.(type) {
-	case *sv.DoesNotExist:
-		defaultStatus = 404
-		defaultObscure = ERROR_NOT_OBSCURED
-	case *sv.AlreadyExists:
-		defaultStatus = 409
-		defaultObscure = ERROR_NOT_OBSCURED
-	case *sv.InternalError:
-		defaultStatus = 500
-		defaultObscure = ERROR_OBSCURED
-	case *sv.GenericError:
-		gerr, _ := err.(*sv.GenericError)
+	serviceError, ok := err.(*sv.ServiceError)
 
-		defaultStatus = gerr.Code
-
-		if gerr.IsSensitive() {
-			defaultObscure = ERROR_OBSCURED
-		} else {
-			defaultObscure = ERROR_NOT_OBSCURED
-		}
-	default:
-		obscure = ERROR_OBSCURED
+	if !ok {
+		obscure = true
 		println("UNSUPPORTED SERVICE ERROR " + err.Error())
+		return NewErrResponse("UNSUPPORTED SERVICE ERROR "+err.Error(), 500, true)
 	}
 
 	if httpStatus == HTTP_STATUS_DEFAULT {
-		httpStatus = defaultStatus
+		httpStatus = serviceError.HttpCodeHint
 	}
 
-	if obscure == ERROR_DEFAULT_OBSCURED {
-		obscure = defaultObscure
+	if obscureType == ERROR_DEFAULT_OBSCURED {
+		obscure = serviceError.IsSensitive()
 	}
 
-	return NewErrResponse(err.Error(), httpStatus, obscure == ERROR_OBSCURED)
+	return NewErrResponse(err.Error(), httpStatus, obscure)
 }
 
 func (this *ErrResponse) Render(w http.ResponseWriter, r *http.Request) error {
