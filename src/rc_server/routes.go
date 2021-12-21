@@ -1,6 +1,7 @@
 package rc_server
 
 import (
+	"fmt"
 	"net/http"
 	. "remotechess/src/rc_server/api"
 	. "remotechess/src/rc_server/api/chessboards"
@@ -27,6 +28,8 @@ func ContentResponder(w http.ResponseWriter, r *http.Request, v interface{}) {
 			render.PlainText(w, r, *str)
 		} else if errResp, ok := v.(*ErrResponse); ok {
 			render.PlainText(w, r, errResp.Detail)
+		} else if stringer, ok := v.(fmt.Stringer); ok {
+			render.PlainText(w, r, stringer.String())
 		}
 	default:
 		render.DefaultResponder(w, r, v)

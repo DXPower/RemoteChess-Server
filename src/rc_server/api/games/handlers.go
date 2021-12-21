@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+	"github.com/notnil/chess"
 )
 
 type GameHandler struct {
@@ -38,6 +39,8 @@ func (gh *GameHandler) Router(router chi.Router) {
 			return FetchChessGame(x)
 		}))
 
+		game.Get("/gamestate", gh.GameState)
+
 		game.Group(func(move chi.Router) {
 			// This is temporary only for debugging purposes to easily read the board output
 			move.Use(render.SetContentType(render.ContentTypePlainText))
@@ -52,6 +55,7 @@ func (gh *GameHandler) Router(router chi.Router) {
 
 		game.Group(func(g chi.Router) {
 			g.Use(render.SetContentType(render.ContentTypePlainText))
+			g.Get("/undo", gh.Undo)
 			g.Get("/print", gh.Print)
 		})
 	})
@@ -104,7 +108,38 @@ func (gh *GameHandler) Move(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.Render(w, r, NewPlainTextResponse(game.PrintBoard()))
+	if game.GetOutcome() == NO_OUTCOME {
+		render.Render(w, r, NewGameStateResponse(*game))
+	} else {
+		render.Render(w, r, NewWonGameStateResponse(*game))
+	}
+}
+
+func (gh *GameHandler) Undo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	game, ok := ctx.Value("game").(*ChessGame)
+
+	if !ok {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	err := game.UndoMove()
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	err = game.Save()
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewGameStateResponse(*game))
 }
 
 func (gh *GameHandler) Print(w http.ResponseWriter, r *http.Request) {
@@ -119,4 +154,21 @@ func (gh *GameHandler) Print(w http.ResponseWriter, r *http.Request) {
 
 	boardStr := game.PrintBoard()
 	render.Render(w, r, NewPlainTextResponse(boardStr))
+}
+
+func (gh *GameHandler) GameState(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	game, ok := ctx.Value("game").(*ChessGame)
+
+	if !ok {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	if game.Game.Outcome() == chess.NoOutcome {
+		render.Render(w, r, NewGameStateResponse(*game))
+	} else {
+		render.Render(w, r, NewWonGameStateResponse(*game))
+	}
 }

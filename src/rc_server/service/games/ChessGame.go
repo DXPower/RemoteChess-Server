@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/notnil/chess"
@@ -24,13 +24,14 @@ const (
 type gameOptions struct {
 	FetchMoves    bool
 	ProvidedFen   string
-	ProvidedMoves string
+	ProvidedMoves []*chess.Move
 }
 
 type ChessGame struct {
-	Id           uint64
-	Game         *chess.Game
-	White, Black Chessboard
+	Id            uint64
+	Game          *chess.Game
+	White, Black  Chessboard
+	IsDrawOffered bool
 }
 
 type ChessGamePersistent struct {
@@ -38,15 +39,20 @@ type ChessGamePersistent struct {
 	FkWhite, FkBlack uint64
 	Fen              string
 	CurrentMove      PlayerColor
-	Completed        bool
+	Outcome          GameOutcome
+	Method           GameMethod
 }
 
 func MakeGameOptionsDefault() gameOptions {
-	return gameOptions{FetchMoves: false, ProvidedFen: "", ProvidedMoves: ""}
+	return gameOptions{FetchMoves: false, ProvidedFen: "", ProvidedMoves: nil}
 }
 
 func MakeGameOptionsFetchMoves() gameOptions {
-	return gameOptions{FetchMoves: true, ProvidedFen: "", ProvidedMoves: ""}
+	return gameOptions{FetchMoves: true, ProvidedFen: "", ProvidedMoves: nil}
+}
+
+func MakeGameOptionsProvidedMoves(moves []*chess.Move) gameOptions {
+	return gameOptions{FetchMoves: true, ProvidedFen: "", ProvidedMoves: moves}
 }
 
 func newChessGame(id uint64, white Chessboard, black Chessboard, options gameOptions) *ChessGame {
@@ -55,6 +61,7 @@ func newChessGame(id uint64, white Chessboard, black Chessboard, options gameOpt
 	cg.Id = id
 	cg.White = white
 	cg.Black = black
+	cg.IsDrawOffered = false
 
 	if options.FetchMoves {
 		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
@@ -66,16 +73,12 @@ func newChessGame(id uint64, white Chessboard, black Chessboard, options gameOpt
 	} else if options.ProvidedFen != "" {
 		fen, _ := chess.FEN(options.ProvidedFen)
 		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}), fen)
-	} else if options.ProvidedMoves != "" {
-		panic("Not implemented")
-		// cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
+	} else if options.ProvidedMoves != nil {
+		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
 
-		// var moves []chess.Move
-		// json.Unmarshal(options.ProvidedMoves, &moves)
-
-		// for _, m := range moves {
-		// 	cg.Game.Move(&m)
-		// }
+		for _, m := range options.ProvidedMoves {
+			cg.Game.Move(m)
+		}
 	} else {
 		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
 	}
@@ -101,6 +104,22 @@ func (cg *ChessGame) GetCurrentMover() *Chessboard {
 	}
 }
 
+func (cg *ChessGame) GetOutcome() GameOutcome {
+	return GameOutcome(cg.Game.Outcome())
+}
+
+func (cg *ChessGame) GetMethod() GameMethod {
+	return GameMethod(cg.Game.Method())
+}
+
+func (cg *ChessGame) GetFEN() string {
+	return cg.Game.FEN()
+}
+
+func (cg *ChessGame) GetMove(i int) *chess.Move {
+	return cg.Game.GetMove(i)
+}
+
 func CreateChessGame(white Chessboard, black Chessboard) (*ChessGame, error) {
 	cg := newChessGame(0, white, black, MakeGameOptionsDefault())
 
@@ -121,20 +140,7 @@ func CreateChessGame(white Chessboard, black Chessboard) (*ChessGame, error) {
 
 // Update any changes to the ChessGame to the database
 func (cg *ChessGame) Save() error {
-	movePtrs := cg.Game.Moves()
-	moves := make([]chess.Move, len(movePtrs))
-
-	for i, m := range movePtrs {
-		moves[i] = *m
-	}
-
-	movesStr, err := json.Marshal(moves)
-
-	if err != nil {
-		return sv.NewInternalError("Could not encode moves as JSON")
-	}
-
-	res, err := sv.Db.Exec(GetGameQuery(UPDATE_GAME), cg.Id, cg.Game.FEN(), string(movesStr), cg.GetTurn())
+	res, err := sv.Db.Exec(GetGameQuery(UPDATE_GAME), cg.Id, cg.GetFEN(), cg.GetTurn(), cg.GetOutcome(), cg.GetMethod())
 
 	if err != nil {
 		return sv.NewInternalError("NewChessGame " + err.Error())
@@ -156,7 +162,7 @@ func FetchChessGame(id uint64) (*ChessGame, error) {
 		return nil, sv.NewInternalError("FetchChessGame " + row.Err().Error())
 	}
 
-	err := row.Scan(&cgp.Id, &cgp.FkWhite, &cgp.FkBlack, &cgp.Fen, &cgp.CurrentMove, &cgp.Completed)
+	err := row.Scan(&cgp.Id, &cgp.FkWhite, &cgp.FkBlack, &cgp.Fen, &cgp.CurrentMove, &cgp.Outcome, &cgp.Method)
 
 	if err == sql.ErrNoRows {
 		return nil, sv.NewDoesNotExistError("Game")
@@ -206,6 +212,27 @@ func (cg *ChessGame) MakeMove(mover Chessboard, moveUci string) error {
 	if err != nil {
 		return sv.NewInternalError("MakeMove " + err.Error())
 	}
+	return nil
+}
+
+func (cg *ChessGame) UndoMove() error {
+	if len(cg.Game.Moves()) == 0 {
+		return sv.NewGenericError("No moves to undo", 405, sv.NOT_SENSITIVE)
+	}
+
+	res, err := sv.Db.Exec(GetGameQuery(DELETE_LAST_MOVE), cg.Id)
+
+	if err != nil {
+		return sv.NewInternalError("UndoMove " + err.Error())
+	}
+
+	if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
+		return sv.NewInternalError("UndoMove affected " + fmt.Sprint(rowsAffected) + " rows")
+	}
+
+	moves := cg.Game.Moves()
+	*cg = *newChessGame(cg.Id, cg.White, cg.Black, MakeGameOptionsProvidedMoves(moves[:len(moves)-1]))
+
 	return nil
 }
 
@@ -285,6 +312,14 @@ func (this PlayerColor) Value() (driver.Value, error) {
 		return "BLACK", nil
 	} else {
 		return nil, sv.NewInternalError("Unknown PlayerColor")
+	}
+}
+
+func (this PlayerColor) String() string {
+	if this == PLAYER_WHITE {
+		return "WHITE"
+	} else {
+		return "BLACK"
 	}
 }
 
