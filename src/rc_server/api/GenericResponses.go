@@ -17,3 +17,11 @@ func NewFailureResponse() *GenericResponse {
 func (this *GenericResponse) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
+
+func (this *GenericResponse) String() string {
+	if this.Success {
+		return "Success"
+	} else {
+		return "Error"
+	}
+}

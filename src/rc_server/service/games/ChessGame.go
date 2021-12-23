@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -28,10 +29,11 @@ type gameOptions struct {
 }
 
 type ChessGame struct {
-	Id            uint64
-	Game          *chess.Game
-	White, Black  Chessboard
-	IsDrawOffered bool
+	Id             uint64
+	Game           *chess.Game
+	White, Black   Chessboard
+	OfferedDraw    GameMethod
+	OfferingPlayer PlayerColor
 }
 
 type ChessGamePersistent struct {
@@ -41,6 +43,8 @@ type ChessGamePersistent struct {
 	CurrentMove      PlayerColor
 	Outcome          GameOutcome
 	Method           GameMethod
+	OfferedDraw      GameMethod
+	OfferingPlayer   PlayerColor
 }
 
 func MakeGameOptionsDefault() gameOptions {
@@ -55,13 +59,14 @@ func MakeGameOptionsProvidedMoves(moves []*chess.Move) gameOptions {
 	return gameOptions{FetchMoves: true, ProvidedFen: "", ProvidedMoves: moves}
 }
 
-func newChessGame(id uint64, white Chessboard, black Chessboard, options gameOptions) *ChessGame {
+func newChessGame(id uint64, white Chessboard, black Chessboard, outcome GameOutcome, method GameMethod, offeredDraw GameMethod, offeringPlayer PlayerColor, options gameOptions) *ChessGame {
 	var cg ChessGame
 
 	cg.Id = id
 	cg.White = white
 	cg.Black = black
-	cg.IsDrawOffered = false
+	cg.OfferedDraw = offeredDraw
+	cg.OfferingPlayer = offeringPlayer
 
 	if options.FetchMoves {
 		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
@@ -81,6 +86,18 @@ func newChessGame(id uint64, white Chessboard, black Chessboard, options gameOpt
 		}
 	} else {
 		cg.Game = chess.NewGame(chess.UseNotation(chess.UCINotation{}))
+	}
+
+	if method == RESIGNATION {
+		if outcome == WHITE_WON {
+			cg.Game.Resign(chess.Black)
+		} else if outcome == BLACK_WON {
+			cg.Game.Resign(chess.White)
+		}
+	} else {
+		if outcome == DRAW {
+			cg.Game.Draw(chess.Method(method))
+		}
 	}
 
 	return &cg
@@ -104,6 +121,24 @@ func (cg *ChessGame) GetCurrentMover() *Chessboard {
 	}
 }
 
+func (cg *ChessGame) GetColorOfBoard(board Chessboard) (PlayerColor, error) {
+	if board.OnboardId == cg.White.OnboardId {
+		return PLAYER_WHITE, nil
+	} else if board.OnboardId == cg.Black.OnboardId {
+		return PLAYER_BLACK, nil
+	} else {
+		return PLAYER_WHITE, errors.New("Board not in this game")
+	}
+}
+
+func (cg *ChessGame) GetBoardOfPlayer(player PlayerColor) *Chessboard {
+	if player == PLAYER_WHITE {
+		return &cg.White
+	} else {
+		return &cg.Black
+	}
+}
+
 func (cg *ChessGame) GetOutcome() GameOutcome {
 	return GameOutcome(cg.Game.Outcome())
 }
@@ -121,7 +156,7 @@ func (cg *ChessGame) GetMove(i int) *chess.Move {
 }
 
 func CreateChessGame(white Chessboard, black Chessboard) (*ChessGame, error) {
-	cg := newChessGame(0, white, black, MakeGameOptionsDefault())
+	cg := newChessGame(0, white, black, NO_OUTCOME, NO_METHOD, NO_METHOD, PLAYER_WHITE, MakeGameOptionsDefault())
 
 	row := sv.Db.QueryRow(GetGameQuery(CREATE_GAME), white.OnboardId, black.OnboardId, cg.Game.FEN())
 
@@ -162,7 +197,7 @@ func FetchChessGame(id uint64) (*ChessGame, error) {
 		return nil, sv.NewInternalError("FetchChessGame " + row.Err().Error())
 	}
 
-	err := row.Scan(&cgp.Id, &cgp.FkWhite, &cgp.FkBlack, &cgp.Fen, &cgp.CurrentMove, &cgp.Outcome, &cgp.Method)
+	err := row.Scan(&cgp.Id, &cgp.FkWhite, &cgp.FkBlack, &cgp.Fen, &cgp.CurrentMove, &cgp.Outcome, &cgp.Method, &cgp.OfferedDraw, &cgp.OfferingPlayer)
 
 	if err == sql.ErrNoRows {
 		return nil, sv.NewDoesNotExistError("Game")
@@ -170,7 +205,7 @@ func FetchChessGame(id uint64) (*ChessGame, error) {
 		white, _ := FetchChessboard(cgp.FkWhite)
 		black, _ := FetchChessboard(cgp.FkBlack)
 
-		cg := newChessGame(cgp.Id, *white, *black, MakeGameOptionsFetchMoves())
+		cg := newChessGame(cgp.Id, *white, *black, cgp.Outcome, cgp.Method, cgp.OfferedDraw, cgp.OfferingPlayer, MakeGameOptionsFetchMoves())
 
 		return cg, nil
 	}
@@ -231,7 +266,7 @@ func (cg *ChessGame) UndoMove() error {
 	}
 
 	moves := cg.Game.Moves()
-	*cg = *newChessGame(cg.Id, cg.White, cg.Black, MakeGameOptionsProvidedMoves(moves[:len(moves)-1]))
+	*cg = *newChessGame(cg.Id, cg.White, cg.Black, NO_OUTCOME, NO_METHOD, NO_METHOD, PLAYER_WHITE, MakeGameOptionsProvidedMoves(moves[:len(moves)-1]))
 
 	return nil
 }
@@ -265,6 +300,99 @@ func (cg *ChessGame) FetchMoves() ([]string, error) {
 	return moves, nil
 }
 
+func (cg *ChessGame) ResignGame(chessboard Chessboard) error {
+	if chessboard.OnboardId == cg.White.OnboardId {
+		cg.Game.Resign(chess.White)
+	} else if chessboard.OnboardId == cg.Black.OnboardId {
+		cg.Game.Resign(chess.Black)
+	} else {
+		return sv.NewGenericError("Chessboard is not a part of this game", 400, sv.NOT_SENSITIVE)
+	}
+
+	return nil
+}
+
+func (cg *ChessGame) OfferDraw(chessboard Chessboard, drawMethod GameMethod) error {
+	eligbleDraws := cg.Game.EligibleDraws()
+
+	for _, d := range eligbleDraws {
+		if chess.Method(drawMethod) == d {
+			goto DRAW_IS_ELIGIBLE
+		}
+	}
+
+	return sv.NewGenericError("Draw method "+drawMethod.String()+" is not eligble", 409, sv.NOT_SENSITIVE)
+
+DRAW_IS_ELIGIBLE:
+	player, err := cg.GetColorOfBoard(chessboard)
+
+	if err != nil {
+		return sv.NewGenericError("Board is not in this game", 400, sv.NOT_SENSITIVE)
+	}
+
+	res, err := sv.Db.Exec(GetGameQuery(UPDATE_DRAW), cg.Id, drawMethod, player)
+
+	if err != nil {
+		return sv.NewInternalError(err.Error())
+	}
+
+	if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
+		return sv.NewInternalError("Draw update did not affect 1 row")
+	}
+
+	return nil
+}
+
+func (cg *ChessGame) AcceptDraw(chessboard Chessboard) error {
+	if cg.OfferedDraw != DRAW_OFFER && cg.OfferedDraw != FIFTY_MOVE_RULE && cg.OfferedDraw != THREEFOLD_REPETITION {
+		return sv.NewGenericError("There is no pending draw for this game", 409, sv.NOT_SENSITIVE)
+	}
+
+	if chessboard.OnboardId == cg.GetBoardOfPlayer(cg.OfferingPlayer).OnboardId {
+		return sv.NewGenericError("You cannot accept this draw", 409, sv.NOT_SENSITIVE)
+	}
+
+	if chessboard.OnboardId != cg.White.OnboardId && chessboard.OnboardId != cg.Black.OnboardId {
+		return sv.NewGenericError("You are not a player in this game", 403, sv.NOT_SENSITIVE)
+	}
+
+	err := cg.Game.Draw(chess.Method(cg.OfferedDraw))
+
+	if err != nil {
+		return sv.NewInternalError("Draw method is invalid when it should be")
+	}
+
+	return nil
+}
+
+func (cg *ChessGame) RejectDraw(chessboard Chessboard) error {
+	if cg.OfferedDraw != DRAW_OFFER && cg.OfferedDraw != FIFTY_MOVE_RULE && cg.OfferedDraw != THREEFOLD_REPETITION {
+		return sv.NewGenericError("There is no pending draw for this game", 409, sv.NOT_SENSITIVE)
+	}
+
+	if chessboard.OnboardId == cg.GetBoardOfPlayer(cg.OfferingPlayer).OnboardId {
+		return sv.NewGenericError("You cannot accept this draw", 409, sv.NOT_SENSITIVE)
+	}
+
+	if chessboard.OnboardId != cg.White.OnboardId && chessboard.OnboardId != cg.Black.OnboardId {
+		return sv.NewGenericError("You are not a player in this game", 403, sv.NOT_SENSITIVE)
+	}
+
+	res, err := sv.Db.Exec(GetGameQuery(UPDATE_DRAW), cg.Id, NO_METHOD, PLAYER_WHITE)
+
+	if err != nil {
+		return sv.NewInternalError(err.Error())
+	}
+
+	if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
+		return sv.NewInternalError("Draw update did not affect 1 row")
+	}
+
+	cg.OfferedDraw = NO_METHOD
+	cg.OfferingPlayer = PLAYER_WHITE
+	return nil
+}
+
 func (cg *ChessGame) PrintBoard() string {
 	pieceTiles := [13]byte{'-', 'K', 'Q', 'R', 'B', 'N', 'P', 'k', 'q', 'r', 'b', 'n', 'p'}
 
@@ -285,6 +413,14 @@ func (cg *ChessGame) PrintBoard() string {
 	}
 
 	return string(output)
+}
+
+func (this *PlayerColor) Other() PlayerColor {
+	if *this == PLAYER_WHITE {
+		return PLAYER_BLACK
+	} else {
+		return PLAYER_WHITE
+	}
 }
 
 func (this *PlayerColor) Scan(value interface{}) error {

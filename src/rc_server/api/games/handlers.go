@@ -7,6 +7,7 @@ import (
 	. "remotechess/src/rc_server/servercore"
 	. "remotechess/src/rc_server/service/chessboards"
 	. "remotechess/src/rc_server/service/games"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -41,16 +42,27 @@ func (gh *GameHandler) Router(router chi.Router) {
 
 		game.Get("/gamestate", gh.GameState)
 
-		game.Group(func(move chi.Router) {
+		game.Group(func(board chi.Router) {
 			// This is temporary only for debugging purposes to easily read the board output
-			move.Use(render.SetContentType(render.ContentTypePlainText))
+			board.Use(render.SetContentType(render.ContentTypePlainText))
 
-			move.Use(utility.CtxFetchFromUrl("boardId", "Board ID", "board", func(x uint64) (interface{}, error) {
+			board.Use(utility.CtxFetchFromUrl("boardId", "Board ID", "board", func(x uint64) (interface{}, error) {
 				return FetchChessboard(x)
 			}))
 
-			move.Use(utility.CtxStringFromURL("move", "Move UCI", false))
-			move.Get("/move/{boardId}/{move}", gh.Move)
+			board.Group(func(g chi.Router) {
+				g.Use(utility.CtxStringFromURL("move", "Move UCI", false))
+				g.Get("/move/{boardId}/{move}", gh.Move)
+			})
+
+			board.Group(func(g chi.Router) {
+				g.Use(utility.CtxStringFromURL("drawMethod", "Draw Method", false))
+				g.Get("/draw/{boardId}/offer/{drawMethod}", gh.OfferDraw)
+			})
+
+			board.Get("/resign/{boardId}", gh.Resign)
+			board.Get("/draw/{boardId}/accept", gh.ResolveDraw(true))
+			board.Get("/draw/{boardId}/reject", gh.ResolveDraw(false))
 		})
 
 		game.Group(func(g chi.Router) {
@@ -140,6 +152,106 @@ func (gh *GameHandler) Undo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Render(w, r, NewGameStateResponse(*game))
+}
+
+func (gh *GameHandler) Resign(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	game, ok1 := ctx.Value("game").(*ChessGame)
+	chessboard, ok2 := ctx.Value("board").(*Chessboard)
+
+	if !ok1 || !ok2 {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	err := game.ResignGame(*chessboard)
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	err = game.Save()
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewGameStateResponse(*game))
+}
+
+func (gh *GameHandler) OfferDraw(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	game, ok1 := ctx.Value("game").(*ChessGame)
+	chessboard, ok2 := ctx.Value("board").(*Chessboard)
+	drawMethodStr, ok3 := ctx.Value("drawMethod").(string)
+
+	if !ok1 || !ok2 || !ok3 {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	var drawMethod GameMethod
+
+	switch strings.ToLower(drawMethodStr) {
+	case "offer":
+		drawMethod = DRAW_OFFER
+	case "threefold_repetition":
+		drawMethod = THREEFOLD_REPETITION
+	case "50_moves":
+		drawMethod = FIFTY_MOVE_RULE
+	default:
+		render.Render(w, r, NewErrResponse("Invalid draw method. Must be offer, threefold_repetition, or 50_moves.", 400, false))
+		return
+	}
+
+	err := game.OfferDraw(*chessboard, drawMethod)
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewSuccessResponse())
+}
+
+func (gh *GameHandler) ResolveDraw(accept bool) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		game, ok1 := ctx.Value("game").(*ChessGame)
+		chessboard, ok2 := ctx.Value("board").(*Chessboard)
+
+		if !ok1 || !ok2 {
+			render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+			return
+		}
+
+		var err error
+
+		if accept {
+			err = game.AcceptDraw(*chessboard)
+
+			if err != nil {
+				render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+				return
+			}
+
+			err = game.Save()
+		} else {
+			err = game.RejectDraw(*chessboard)
+		}
+
+		if err != nil {
+			render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+			return
+		}
+
+		render.Render(w, r, NewSuccessResponse())
+	}
 }
 
 func (gh *GameHandler) Print(w http.ResponseWriter, r *http.Request) {

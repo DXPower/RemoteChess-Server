@@ -19,13 +19,14 @@ type MoveResponse struct {
 
 type GameStateResponse struct {
 	GenericResponse
-	boardPretty   string
-	Pieces        string       `json:"pieces"`
-	Turn          string       `json:"turn"`
-	LastMove      MoveResponse `json:"lastMove"`
-	InCheck       bool         `json:"check"`
-	GameOver      bool         `json:"gameOver"`
-	IsDrawOffered bool         `json:"drawOffered"`
+	boardPretty    string
+	Pieces         string       `json:"pieces"`
+	Turn           string       `json:"turn"`
+	LastMove       MoveResponse `json:"lastMove"`
+	InCheck        bool         `json:"check"`
+	GameOver       bool         `json:"gameOver"`
+	OfferedDraw    string       `json:"offeredDraw"`
+	OfferingPlayer string       `json:"offeringPlayer"`
 }
 
 type WonGameStateResponse struct {
@@ -65,7 +66,8 @@ func NewGameStateResponse(cg ChessGame) *GameStateResponse {
 	}
 
 	gsr.GameOver = cg.GetOutcome() != NO_OUTCOME
-	gsr.IsDrawOffered = cg.IsDrawOffered
+	gsr.OfferedDraw = cg.OfferedDraw.String()
+	gsr.OfferingPlayer = cg.OfferingPlayer.String()
 
 	return &gsr
 }
@@ -91,7 +93,8 @@ func (gsr *GameStateResponse) String() string {
 		"Last Move:\t\t%s\n" +
 		"In Check:\t\t%t\n" +
 		"Game Over:\t\t%t\n" +
-		"Draw Offered:\t%t\n"
+		"Offered Draw:\t%t\n" +
+		"Offering Player:\t%t\n"
 
-	return fmt.Sprintf(format, gsr.boardPretty, gsr.Pieces, gsr.Turn, gsr.LastMove.String(), gsr.InCheck, gsr.GameOver, gsr.IsDrawOffered)
+	return fmt.Sprintf(format, gsr.boardPretty, gsr.Pieces, gsr.Turn, gsr.LastMove.String(), gsr.InCheck, gsr.GameOver, gsr.OfferedDraw, gsr.OfferingPlayer)
 }

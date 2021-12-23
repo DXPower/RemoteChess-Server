@@ -10,12 +10,13 @@ const (
 	GET_MOVES
 	GET_LAST_MOVE
 	DELETE_LAST_MOVE
+	UPDATE_DRAW
 )
 
 func GetGameQuery(q GameQuery) string {
 	switch q {
 	case SELECT_GAME:
-		return `SELECT id, fk_white, fk_black, fen, current_move, outcome, method FROM games WHERE id = $1`
+		return `SELECT id, fk_white, fk_black, fen, current_move, outcome, method, offered_draw, offering_player FROM games WHERE id = $1`
 	case CREATE_GAME:
 		return `INSERT INTO games (fk_white, fk_black, fen) VALUES ($1, $2, $3) RETURNING id`
 	case UPDATE_GAME:
@@ -31,6 +32,8 @@ func GetGameQuery(q GameQuery) string {
 				WHERE
 					fk_game = $1 AND
 					move_num = (SELECT MAX(move_num) FROM moves WHERE fk_game = $1)`
+	case UPDATE_DRAW:
+		return `UPDATE games SET offered_draw = $2, offering_player = $3 WHERE id = $1`
 	}
 
 	panic("Invalid query select")
