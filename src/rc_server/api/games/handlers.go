@@ -41,6 +41,7 @@ func (gh *GameHandler) Router(router chi.Router) {
 		}))
 
 		game.Get("/gamestate", gh.GameState)
+		game.Get("/legalmoves", gh.LegalMoves)
 
 		game.Group(func(board chi.Router) {
 			// This is temporary only for debugging purposes to easily read the board output
@@ -283,4 +284,17 @@ func (gh *GameHandler) GameState(w http.ResponseWriter, r *http.Request) {
 	} else {
 		render.Render(w, r, NewWonGameStateResponse(*game))
 	}
+}
+
+func (gh *GameHandler) LegalMoves(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	game, ok := ctx.Value("game").(*ChessGame)
+
+	if !ok {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	render.Render(w, r, NewLegalMovesResponse(*game))
 }

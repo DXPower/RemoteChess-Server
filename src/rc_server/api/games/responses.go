@@ -9,11 +9,13 @@ import (
 	"github.com/notnil/chess"
 )
 
-type MoveResponse struct {
+type ResponseMove struct {
+	Piece       string `json:"piece"`
 	Origin      string `json:"from"`
 	Destination string `json:"to"`
 	IsCapture   bool   `json:"capture"`
 	IsEnPassant bool   `json:"enPassant"`
+	IsCheck     bool   `json:"isCheck"`
 	Promotion   string `json:"promotion"`
 	Castle      string `json:"castle"`
 }
@@ -24,7 +26,7 @@ type GameStateResponse struct {
 	Id             uint64       `json:"id"`
 	Pieces         string       `json:"pieces"`
 	Turn           string       `json:"turn"`
-	LastMove       MoveResponse `json:"lastMove"`
+	LastMove       ResponseMove `json:"lastMove"`
 	InCheck        bool         `json:"check"`
 	GameOver       bool         `json:"gameOver"`
 	OfferedDraw    string       `json:"offeredDraw"`
@@ -35,6 +37,34 @@ type WonGameStateResponse struct {
 	GameStateResponse
 	Outcome string `json:"outcome"`
 	Method  string `json:"method"`
+}
+
+type LegalMovesResponse struct {
+	GenericResponse
+	Moves []ResponseMove `json:"moves"`
+}
+
+func newResponseMove(move *chess.Move) ResponseMove {
+	castle := ""
+
+	if move.HasTag(chess.KingSideCastle) {
+		castle = "K"
+	} else if move.HasTag(chess.QueenSideCastle) {
+		castle = "Q"
+	}
+
+	rm := ResponseMove{
+		Piece:       CPieceToString(move.PieceMoved().Type()),
+		Origin:      move.S1().String(),
+		Destination: move.S2().String(),
+		IsEnPassant: move.HasTag(chess.EnPassant),
+		IsCapture:   move.HasTag(chess.Capture),
+		IsCheck:     move.HasTag(chess.Check),
+		Promotion:   move.Promo().String(),
+		Castle:      castle,
+	}
+
+	return rm
 }
 
 func NewGameStateResponse(cg ChessGame) *GameStateResponse {
@@ -49,23 +79,7 @@ func NewGameStateResponse(cg ChessGame) *GameStateResponse {
 	lastMove := cg.GetMove(-1)
 
 	if lastMove != nil {
-		castle := ""
-
-		if lastMove.HasTag(chess.KingSideCastle) {
-			castle = "K"
-		} else if lastMove.HasTag(chess.QueenSideCastle) {
-			castle = "Q"
-		}
-
-		gsr.LastMove = MoveResponse{
-			Origin:      lastMove.S1().String(),
-			Destination: lastMove.S2().String(),
-			IsEnPassant: lastMove.HasTag(chess.EnPassant),
-			IsCapture:   lastMove.HasTag(chess.Capture),
-			Promotion:   lastMove.Promo().String(),
-			Castle:      castle,
-		}
-
+		gsr.LastMove = newResponseMove(lastMove)
 		gsr.InCheck = lastMove.HasTag(chess.Check)
 	}
 
@@ -86,7 +100,22 @@ func NewWonGameStateResponse(cg ChessGame) *WonGameStateResponse {
 	return &wgsr
 }
 
-func (mr *MoveResponse) String() string {
+func NewLegalMovesResponse(cg ChessGame) *LegalMovesResponse {
+	lmr := LegalMovesResponse{
+		GenericResponse: *NewSuccessResponse(),
+		Moves:           []ResponseMove{},
+	}
+
+	lmr.Success = true
+
+	for _, move := range cg.GetLegalMoves() {
+		lmr.Moves = append(lmr.Moves, newResponseMove(move))
+	}
+
+	return &lmr
+}
+
+func (mr *ResponseMove) String() string {
 	return fmt.Sprintf("%s%s Capture: %t En Passant: %t Promotion: %s Castle: %s", mr.Origin, mr.Destination, mr.IsCapture, mr.IsEnPassant, mr.Promotion, mr.Castle)
 }
 

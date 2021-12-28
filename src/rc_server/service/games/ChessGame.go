@@ -149,6 +149,10 @@ func (cg *ChessGame) GetMove(i int) *chess.Move {
 	return cg.Game.GetMove(i)
 }
 
+func (cg *ChessGame) GetLegalMoves() []*chess.Move {
+	return cg.Game.Position().ValidMoves()
+}
+
 func CreateChessGame(white *Chessboard, black *Chessboard) (*ChessGame, error) {
 	cg := newChessGame(0, *white, *black, NO_OUTCOME, NO_METHOD, NO_METHOD, PLAYER_WHITE, MakeGameOptionsDefault())
 
