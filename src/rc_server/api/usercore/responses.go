@@ -1,27 +1,11 @@
 package usercore
 
 import (
-	"net/http"
+	. "remotechess/src/rc_server/api"
 )
 
-type UserCoreResponse struct {
-	Success bool `json:"success"`
-}
-
-func NewSuccessfulUserCoreResponse() UserCoreResponse {
-	return UserCoreResponse{true}
-}
-
-func NewFailureUserCoreResponse() UserCoreResponse {
-	return UserCoreResponse{false}
-}
-
-func (_ *UserCoreResponse) Render(w http.ResponseWriter, r *http.Request) error {
-	return nil
-}
-
 type GetUserCoreResponse struct {
-	UserCoreResponse
+	GenericResponse
 	Id       uint64 `json:"id"`
 	Username string `json:"username"`
 }
@@ -32,6 +16,6 @@ type ResponseFriend struct {
 }
 
 type GetFriendsResponse struct {
-	UserCoreResponse
+	GenericResponse
 	Friends []ResponseFriend `json:"friends"`
 }

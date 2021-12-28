@@ -84,7 +84,7 @@ func (gh *GameHandler) CreateGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := CreateChessGame(*white, *black)
+	_, err := CreateChessGame(white, black)
 
 	if err != nil {
 		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))

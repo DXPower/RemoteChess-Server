@@ -2,6 +2,7 @@ package chessboards
 
 import (
 	// "database/sql"
+
 	"database/sql"
 	. "remotechess/src/rc_server/rcdb/chessboards"
 
@@ -15,6 +16,7 @@ import (
 type Chessboard struct {
 	OnboardId uint64
 	OwnerId   sql.NullInt64
+	CurGame   sql.NullInt64
 }
 
 func FetchChessboard(onboardId uint64) (*Chessboard, error) {
@@ -26,7 +28,7 @@ func FetchChessboard(onboardId uint64) (*Chessboard, error) {
 		return &cb, sv.NewInternalError("FetchChessboard " + row.Err().Error())
 	}
 
-	err := row.Scan(&cb.OnboardId, &cb.OwnerId)
+	err := row.Scan(&cb.OnboardId, &cb.OwnerId, &cb.CurGame)
 
 	if err == sql.ErrNoRows {
 		return &cb, sv.NewDoesNotExistError("Chessboard")
@@ -71,6 +73,18 @@ func (cb *Chessboard) AssignFirstOwner(owner UserCore) error {
 		return sv.NewInternalError("AssignFirstOwner " + err.Error())
 	} else if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
 		return sv.NewGenericError("Chessboard already has owner", 405, sv.NOT_SENSITIVE)
+	}
+
+	return nil
+}
+
+func (cb *Chessboard) LeaveGame() error {
+	res, err := sv.Db.Exec(GetChessboardQuery(UPDATE_CURRENT_GAME), cb.OnboardId, nil)
+
+	if err != nil {
+		return sv.NewInternalError("LeaveGame " + err.Error())
+	} else if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
+		return sv.NewInternalError("LeaveGame did not affect 1 row")
 	}
 
 	return nil

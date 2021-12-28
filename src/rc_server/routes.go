@@ -6,6 +6,7 @@ import (
 	. "remotechess/src/rc_server/api"
 	. "remotechess/src/rc_server/api/chessboards"
 	. "remotechess/src/rc_server/api/games"
+	. "remotechess/src/rc_server/api/invitations"
 	. "remotechess/src/rc_server/api/usercore"
 	"remotechess/src/rc_server/rcdb"
 	. "remotechess/src/rc_server/servercore"
@@ -45,6 +46,7 @@ func Routes(server *ServerCore) {
 	uch := NewUserCoreHandler(server)
 	cbh := NewChessboardHandler(server)
 	gh := NewGameHandler(server)
+	ih := NewInvitationHandler(server)
 
 	server.Router.Route("/api", func(r chi.Router) {
 		r.Use(render.SetContentType(render.ContentTypeJSON))
@@ -52,5 +54,6 @@ func Routes(server *ServerCore) {
 		r.Route("/usercore/{userId}", uch.Router())
 		r.Route("/chessboard/{boardId}", cbh.Router)
 		r.Route("/game", gh.Router)
+		r.Route("/invites", ih.Router())
 	})
 }

@@ -13,6 +13,7 @@ type MoveResponse struct {
 	Origin      string `json:"from"`
 	Destination string `json:"to"`
 	IsCapture   bool   `json:"capture"`
+	IsEnPassant bool   `json:"enPassant"`
 	Promotion   string `json:"promotion"`
 	Castle      string `json:"castle"`
 }
@@ -20,6 +21,7 @@ type MoveResponse struct {
 type GameStateResponse struct {
 	GenericResponse
 	boardPretty    string
+	Id             uint64       `json:"id"`
 	Pieces         string       `json:"pieces"`
 	Turn           string       `json:"turn"`
 	LastMove       MoveResponse `json:"lastMove"`
@@ -39,6 +41,7 @@ func NewGameStateResponse(cg ChessGame) *GameStateResponse {
 	var gsr GameStateResponse
 
 	gsr.GenericResponse = *NewSuccessResponse()
+	gsr.Id = cg.Id
 	gsr.boardPretty = cg.PrintBoard()
 	gsr.Pieces = strings.Split(cg.GetFEN(), " ")[0]
 	gsr.Turn = cg.GetTurn().String()
@@ -57,6 +60,7 @@ func NewGameStateResponse(cg ChessGame) *GameStateResponse {
 		gsr.LastMove = MoveResponse{
 			Origin:      lastMove.S1().String(),
 			Destination: lastMove.S2().String(),
+			IsEnPassant: lastMove.HasTag(chess.EnPassant),
 			IsCapture:   lastMove.HasTag(chess.Capture),
 			Promotion:   lastMove.Promo().String(),
 			Castle:      castle,
@@ -83,7 +87,7 @@ func NewWonGameStateResponse(cg ChessGame) *WonGameStateResponse {
 }
 
 func (mr *MoveResponse) String() string {
-	return fmt.Sprintf("%s%s Capture: %t Promotion: %s Castle: %s", mr.Origin, mr.Destination, mr.IsCapture, mr.Promotion, mr.Castle)
+	return fmt.Sprintf("%s%s Capture: %t En Passant: %t Promotion: %s Castle: %s", mr.Origin, mr.Destination, mr.IsCapture, mr.IsEnPassant, mr.Promotion, mr.Castle)
 }
 
 func (gsr *GameStateResponse) String() string {
@@ -93,8 +97,8 @@ func (gsr *GameStateResponse) String() string {
 		"Last Move:\t\t%s\n" +
 		"In Check:\t\t%t\n" +
 		"Game Over:\t\t%t\n" +
-		"Offered Draw:\t%t\n" +
-		"Offering Player:\t%t\n"
+		"Offered Draw:\t%s\n" +
+		"Offering Player:\t%s\n"
 
 	return fmt.Sprintf(format, gsr.boardPretty, gsr.Pieces, gsr.Turn, gsr.LastMove.String(), gsr.InCheck, gsr.GameOver, gsr.OfferedDraw, gsr.OfferingPlayer)
 }

@@ -27,6 +27,19 @@ func (cbh *ChessboardHandler) Router(router chi.Router) {
 	})
 
 	router.Group(func(r chi.Router) {
+		r.Use(utility.CtxFetchFromUrl("boardId", "Board ID", "chessboard", func(x uint64) (interface{}, error) {
+			return FetchChessboard(x)
+		}))
+
+		r.Group(func(r chi.Router) {
+			r.Use(render.SetContentType(render.ContentTypePlainText))
+			r.Get("/print", cbh.GetPretty)
+		})
+
+		r.Get("/leavegame", cbh.LeaveGame)
+	})
+
+	router.Group(func(r chi.Router) {
 		r.Use(render.SetContentType(render.ContentTypePlainText))
 
 		r.Use(utility.CtxFetchFromUrl("boardId", "Board ID", "chessboard", func(x uint64) (interface{}, error) {
@@ -34,6 +47,7 @@ func (cbh *ChessboardHandler) Router(router chi.Router) {
 		}))
 
 		r.Get("/print", cbh.GetPretty)
+		r.Get("/leavegame", cbh.LeaveGame)
 	})
 }
 
@@ -74,7 +88,28 @@ func (cbh *ChessboardHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
 	}
 
-	return
+	render.Render(w, r, NewSuccessResponse())
+}
+
+func (cbh *ChessboardHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	board, ok := ctx.Value("chessboard").(*Chessboard)
+
+	if !ok {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	err := board.LeaveGame()
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewSuccessResponse())
 }

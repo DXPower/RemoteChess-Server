@@ -79,9 +79,10 @@ func (uh *UserCoreHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Render(w, r, &GetUserCoreResponse{
-		UserCoreResponse: NewSuccessfulUserCoreResponse(),
-		Id:               user.Id,
-		Username:         user.Username})
+		GenericResponse: *NewSuccessResponse(),
+		Id:              user.Id,
+		Username:        user.Username},
+	)
 }
 
 func (uh *UserCoreHandler) GetPretty(w http.ResponseWriter, r *http.Request) {
@@ -118,8 +119,7 @@ func (uch *UserCoreHandler) RegisterBoard(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	response := NewSuccessfulUserCoreResponse()
-	render.Render(w, r, &response)
+	render.Render(w, r, NewSuccessResponse())
 }
 
 func (uch *UserCoreHandler) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
@@ -140,8 +140,7 @@ func (uch *UserCoreHandler) SendFriendRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	response := NewSuccessfulUserCoreResponse()
-	render.Render(w, r, &response)
+	render.Render(w, r, NewSuccessResponse())
 }
 
 func (uch *UserCoreHandler) GetFriends(pending bool) func(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +167,7 @@ func (uch *UserCoreHandler) GetFriends(pending bool) func(w http.ResponseWriter,
 			pendingRequests[i] = ResponseFriend{Id: r.Id, Username: r.Username}
 		}
 
-		render.Render(w, r, &GetFriendsResponse{NewSuccessfulUserCoreResponse(), pendingRequests})
+		render.Render(w, r, &GetFriendsResponse{*NewSuccessResponse(), pendingRequests})
 	}
 }
 
@@ -190,8 +189,7 @@ func (uch *UserCoreHandler) AcceptFriendRequest(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	response := NewSuccessfulUserCoreResponse()
-	render.Render(w, r, &response)
+	render.Render(w, r, NewSuccessResponse())
 }
 
 func (uch *UserCoreHandler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +210,5 @@ func (uch *UserCoreHandler) RemoveFriend(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response := NewSuccessfulUserCoreResponse()
-	render.Render(w, r, &response)
+	render.Render(w, r, NewSuccessResponse())
 }

@@ -1,25 +1,19 @@
 package games
 
 import (
-	"bytes"
+	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/notnil/chess"
 
+	. "remotechess/src/rc_server/rcdb/chessboards"
 	. "remotechess/src/rc_server/rcdb/games"
 	sv "remotechess/src/rc_server/service"
 	. "remotechess/src/rc_server/service/chessboards"
-)
-
-type PlayerColor int64
-
-const (
-	PLAYER_WHITE PlayerColor = iota
-	PLAYER_BLACK
+	. "remotechess/src/rc_server/service/common"
 )
 
 type gameOptions struct {
@@ -155,20 +149,46 @@ func (cg *ChessGame) GetMove(i int) *chess.Move {
 	return cg.Game.GetMove(i)
 }
 
-func CreateChessGame(white Chessboard, black Chessboard) (*ChessGame, error) {
-	cg := newChessGame(0, white, black, NO_OUTCOME, NO_METHOD, NO_METHOD, PLAYER_WHITE, MakeGameOptionsDefault())
+func CreateChessGame(white *Chessboard, black *Chessboard) (*ChessGame, error) {
+	cg := newChessGame(0, *white, *black, NO_OUTCOME, NO_METHOD, NO_METHOD, PLAYER_WHITE, MakeGameOptionsDefault())
 
-	row := sv.Db.QueryRow(GetGameQuery(CREATE_GAME), white.OnboardId, black.OnboardId, cg.Game.FEN())
+	ctx := context.Background()
+	tx, err := sv.Db.BeginTx(ctx, nil)
+
+	if err != nil {
+		return nil, sv.NewInternalError("CreateChessGame" + err.Error())
+	}
+
+	defer tx.Rollback()
+
+	row := sv.Db.QueryRowContext(ctx, GetGameQuery(CREATE_GAME), white.OnboardId, black.OnboardId, cg.Game.FEN())
 
 	if row.Err() != nil {
 		return nil, sv.NewInternalError("CreateChessGame " + row.Err().Error())
 	}
 
-	err := row.Scan(&cg.Id)
+	err = row.Scan(&cg.Id)
 
 	if err != nil {
 		return nil, sv.NewInternalError("CreateChessGame " + err.Error())
 	}
+
+	res, err := sv.Db.ExecContext(ctx, GetChessboardQuery(UPDATE_CURRENT_GAME_MULTI), cg.Id, white.OnboardId, black.OnboardId)
+
+	if err != nil {
+		return nil, sv.NewInternalError("CreateChessGame " + err.Error())
+	} else if rowsAffected, _ := res.RowsAffected(); rowsAffected != 2 {
+		return nil, sv.NewInternalError("CreateChessGame fk_cur_game update did not affect 2 rows")
+	}
+
+	err = tx.Commit()
+
+	if err != nil {
+		return nil, sv.NewInternalError(err.Error())
+	}
+
+	white.CurGame.Int64 = int64(cg.Id)
+	black.CurGame.Int64 = int64(cg.Id)
 
 	return cg, nil
 }
@@ -413,50 +433,6 @@ func (cg *ChessGame) PrintBoard() string {
 	}
 
 	return string(output)
-}
-
-func (this *PlayerColor) Other() PlayerColor {
-	if *this == PLAYER_WHITE {
-		return PLAYER_BLACK
-	} else {
-		return PLAYER_WHITE
-	}
-}
-
-func (this *PlayerColor) Scan(value interface{}) error {
-	b, ok := value.([]byte)
-
-	if !ok {
-		return sv.NewInternalError("Scan source is not []byte")
-	}
-
-	if bytes.Equal(b, []byte("WHITE")) {
-		*this = PLAYER_WHITE
-	} else if bytes.Equal(b, []byte("BLACK")) {
-		*this = PLAYER_BLACK
-	} else {
-		return sv.NewInternalError("Invalid PlayerColor enum received: " + string(b))
-	}
-
-	return nil
-}
-
-func (this PlayerColor) Value() (driver.Value, error) {
-	if this == PLAYER_WHITE {
-		return "WHITE", nil
-	} else if this == PLAYER_BLACK {
-		return "BLACK", nil
-	} else {
-		return nil, sv.NewInternalError("Unknown PlayerColor")
-	}
-}
-
-func (this PlayerColor) String() string {
-	if this == PLAYER_WHITE {
-		return "WHITE"
-	} else {
-		return "BLACK"
-	}
 }
 
 func CPieceToString(p chess.PieceType) string {
