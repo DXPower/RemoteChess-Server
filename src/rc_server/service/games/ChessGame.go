@@ -235,6 +235,14 @@ func FetchChessGame(id uint64) (*ChessGame, error) {
 	}
 }
 
+func FetchCurrentGame(cb *Chessboard) (*ChessGame, error) {
+	if cb.OwnerId.Valid {
+		return FetchChessGame(uint64(cb.CurGame.Int64))
+	} else {
+		return nil, nil
+	}
+}
+
 func (cg *ChessGame) MakeMove(mover Chessboard, moveUci string) error {
 	if cg.GetCurrentMover().OnboardId != mover.OnboardId {
 		return sv.NewGenericError("Not your turn", 405, sv.NOT_SENSITIVE)

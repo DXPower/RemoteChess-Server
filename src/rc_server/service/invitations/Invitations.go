@@ -30,6 +30,51 @@ func CreateCodeInvite(cb Chessboard) (int, error) {
 	return inviteCode, nil
 }
 
+func JoinCodeInvite(recipient *Chessboard, inviteCode int) (*ChessGame, error) {
+	var sender Chessboard
+	var recipientColor PlayerColor
+
+	row := sv.Db.QueryRow(GetInvitationQuery(GET_CODE_INVITE_SENDER_BOARD), inviteCode)
+
+	if row.Err() != nil {
+		return nil, sv.NewInternalError("JoinCodeInvite " + row.Err().Error())
+	}
+
+	err := row.Scan(&sender.OnboardId, &sender.OwnerId, &sender.CurGame, &recipientColor)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, sv.NewDoesNotExistError("Invite")
+		} else {
+			return nil, sv.NewInternalError("JoinCodeInvite " + err.Error())
+		}
+	}
+
+	if sender.CurGame.Valid || recipient.CurGame.Valid {
+		return nil, sv.NewGenericError("Player(s) already in game", 409, sv.NOT_SENSITIVE)
+	}
+
+	if sender.OnboardId == recipient.OnboardId {
+		return nil, sv.NewGenericError("Cannot join your own game via code", 409, sv.NOT_SENSITIVE)
+	}
+
+	var game *ChessGame
+
+	if recipientColor == PLAYER_WHITE {
+		game, err = CreateChessGame(recipient, &sender)
+	} else {
+		game, err = CreateChessGame(&sender, recipient)
+	}
+
+	if err != nil {
+		return game, err
+	}
+
+	err = ClearInvites(sender.OnboardId)
+
+	return game, err
+}
+
 func CancelCodeInvite(inviteCode int) error {
 	res, err := sv.Db.Exec(GetInvitationQuery(CANCEL_CODE_INVITE), inviteCode)
 
@@ -57,6 +102,16 @@ func SendInvite(sender Chessboard, recipient UserCore) error {
 
 	if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
 		return sv.NewInternalError("SendInvite did not affect 1 row")
+	}
+
+	return nil
+}
+
+func CancelInvite(sender Chessboard, recipient UserCore) error {
+	_, err := sv.Db.Exec(GetInvitationQuery(CANCEL_SENT_INVITE), sender.OnboardId, recipient.Id)
+
+	if err != nil {
+		return sv.NewInternalError(err.Error())
 	}
 
 	return nil
@@ -97,7 +152,7 @@ func GetPendingInvites(user UserCore) ([]PendingInvite, error) {
 func AcceptInvite(recipient *Chessboard, inviteId uint64, recipientColor PlayerColor) (*ChessGame, error) {
 	var sender Chessboard
 
-	row := sv.Db.QueryRow(GetInvitationQuery(GET_INVITE_SENDER_BOARD), inviteId, recipient.OnboardId, recipientColor)
+	row := sv.Db.QueryRow(GetInvitationQuery(GET_SENT_INVITE_SENDER_BOARD), inviteId, recipient.OnboardId, recipientColor)
 
 	if row.Err() != nil {
 		return nil, sv.NewInternalError("AcceptInvite " + row.Err().Error())
@@ -129,7 +184,7 @@ func AcceptInvite(recipient *Chessboard, inviteId uint64, recipientColor PlayerC
 		return game, err
 	}
 
-	err = DeleteInvite(inviteId)
+	err = ClearInvites(sender.OnboardId)
 
 	return game, err
 }
@@ -157,6 +212,16 @@ func DeleteInvite(inviteId uint64) error {
 
 	if rowsAffected, _ := res.RowsAffected(); rowsAffected != 1 {
 		return sv.NewDoesNotExistError("Invite")
+	}
+
+	return nil
+}
+
+func ClearInvites(senderBid uint64) error {
+	_, err := sv.Db.Exec(GetInvitationQuery(CLEAR_INVITES), senderBid)
+
+	if err != nil {
+		return sv.NewInternalError("ClearInvites " + err.Error())
 	}
 
 	return nil

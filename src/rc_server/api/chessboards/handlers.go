@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	. "remotechess/src/rc_server/api"
+	"remotechess/src/rc_server/api/games"
 	"remotechess/src/rc_server/api/utility"
 	. "remotechess/src/rc_server/servercore"
 	. "remotechess/src/rc_server/service/chessboards"
+	. "remotechess/src/rc_server/service/games"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -36,6 +38,7 @@ func (cbh *ChessboardHandler) Router(router chi.Router) {
 			r.Get("/print", cbh.GetPretty)
 		})
 
+		r.Get("/currentgame", cbh.CurrentGame)
 		r.Get("/leavegame", cbh.LeaveGame)
 	})
 
@@ -92,6 +95,30 @@ func (cbh *ChessboardHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Render(w, r, NewSuccessResponse())
+}
+
+func (cbh *ChessboardHandler) CurrentGame(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	board, ok := ctx.Value("chessboard").(*Chessboard)
+
+	if !ok {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	game, err := FetchCurrentGame(board)
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	if game.GetOutcome() == NO_OUTCOME {
+		render.Render(w, r, games.NewGameStateResponse(*game))
+	} else {
+		render.Render(w, r, games.NewWonGameStateResponse(*game))
+	}
 }
 
 func (cbh *ChessboardHandler) LeaveGame(w http.ResponseWriter, r *http.Request) {

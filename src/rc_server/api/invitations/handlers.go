@@ -49,11 +49,18 @@ func (ih *InvitationHandler) Router() func(chi.Router) {
 			g.Get("/createcode/{boardId}", ih.CreateInvite)
 
 			g.Group(func(g chi.Router) {
+				g.Use(utility.CtxIntFromURL("inviteCode", "Invite Code"))
+
+				g.Get("/joincode/{boardId}/{inviteCode}", ih.JoinCodeInvite)
+			})
+
+			g.Group(func(g chi.Router) {
 				g.Use(utility.CtxFetchFromUrl("userId", "User ID", "user", func(x uint64) (interface{}, error) {
 					return FetchUserCore(x)
 				}))
 
 				g.Get("/send/f/{boardId}/t/{userId}", ih.SendInvite)
+				g.Get("/cancelinvite/f/{boardId}/t/{userId}", ih.CancelSentInvite)
 			})
 		})
 
@@ -121,6 +128,27 @@ func (ih *InvitationHandler) CancelCodeInvite(w http.ResponseWriter, r *http.Req
 	render.Render(w, r, NewSuccessResponse())
 }
 
+func (ih *InvitationHandler) JoinCodeInvite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	recipient, ok1 := ctx.Value("chessboard").(*Chessboard)
+	inviteCode, ok2 := ctx.Value("inviteCode").(int)
+
+	if !ok1 || !ok2 {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	game, err := JoinCodeInvite(recipient, inviteCode)
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewGameStateResponse(*game))
+}
+
 func (ih *InvitationHandler) SendInvite(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -133,6 +161,27 @@ func (ih *InvitationHandler) SendInvite(w http.ResponseWriter, r *http.Request) 
 	}
 
 	err := SendInvite(*board, *user)
+
+	if err != nil {
+		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
+		return
+	}
+
+	render.Render(w, r, NewSuccessResponse())
+}
+
+func (ih *InvitationHandler) CancelSentInvite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	board, ok1 := ctx.Value("chessboard").(*Chessboard)
+	user, ok2 := ctx.Value("user").(*UserCore)
+
+	if !ok1 || !ok2 {
+		render.Render(w, r, NewErrResponse(http.StatusText(422), 422, true))
+		return
+	}
+
+	err := CancelInvite(*board, *user)
 
 	if err != nil {
 		render.Render(w, r, NewErrResponseFromServiceErr(err, HTTP_STATUS_DEFAULT, ERROR_DEFAULT_OBSCURED))
